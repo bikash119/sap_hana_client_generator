@@ -655,24 +655,68 @@ cd {self.package_name}
 pip install -e .
 ```
 
-## Usage
+## Getting Started
 
 ```python
 from {self.package_name} import Client
 
-# Initialize the client
+# Initialize client with authentication
 client = Client(
-    base_url="https://api.example.com",
-    api_key="your-api-key",  # Optional
-    username="your-username",  # Optional
-    password="your-password",  # Optional
+    base_url="https://your-sap-instance.com/sap/opu/odata/sap/API_SALES_ORDER_SRV",
+    username="your-username",
+    password="your-password"
+    # Or use token: api_key="your-token"
 )
 
-# Use the client to make API calls
-# Example:
-# response = client.some_api.some_operation(param1="value1", param2="value2")
-# print(response)
+# Make API calls
+response = client.sales_order_header.get_sales_orders()
 ```
+
+## Examples
+
+### Example 1: Basic Authentication
+
+```python
+from {self.package_name} import Client
+
+# Using username/password authentication
+client = Client(
+    base_url="https://your-sap-instance.com/sap/opu/odata/sap/API_SALES_ORDER_SRV",
+    username="your-username",
+    password="your-password"
+)
+
+# Get a specific sales order
+sales_order = client.sales_order_header.get_sales_order(sales_order="10000050")
+print(f"Order: {{sales_order.sales_order}}, Customer: {{sales_order.sold_to_party}}")
+```
+
+### Example 2: API Key Authentication
+
+```python
+from {self.package_name} import Client
+
+# Using API key authentication
+client = Client(
+    base_url="https://your-sap-instance.com/sap/opu/odata/sap/API_SALES_ORDER_SRV",
+    api_key="your-bearer-token-here"
+)
+
+# Get sales orders with filtering
+orders = client.sales_order_header.get_sales_orders(
+    filter="sales_organization eq '1000' and distribution_channel eq '10'"
+)
+for order in orders:
+    print(f"Order: {{order.sales_order}}, Value: {{order.total_net_amount}} {{order.document_currency}}")
+```
+
+## Features
+
+- Type-annotated requests and responses
+- Authentication support (Basic auth and API key)
+- Organized API endpoints by SAP module
+- Proper error handling
+- Complete data models with validation
 
 ## Testing
 
@@ -731,7 +775,7 @@ MIT
         """
         with open(os.path.join(tests_dir, 'test_client.py'), 'w', encoding='utf-8') as f:
             api_title = self.spec.get('info', {}).get('title', 'API')
-            f.write(f"""\"\"\"Tests for the {api_title} client.\"\"\""")
+            f.write(f"""\"\"\"Tests for the {api_title} client.\"\"\"
 
 import unittest
 from unittest.mock import patch, MagicMock
@@ -740,7 +784,7 @@ from {self.package_name} import Client
 
 
 class TestClient(unittest.TestCase):
-    """Test cases for the main Client class."""
+    \"\"\"Test cases for the main Client class.\"\"\"""")
 
     def setUp(self):
         """Set up test fixtures."""
@@ -836,7 +880,7 @@ if __name__ == '__main__':
             f.write(f'''"""Tests for {api_title} model classes."""
 
 import unittest
-from {self.package_name}.models import *
+from {self.package_name}.models import *  # noqa: F403
 
 
 class TestModels(unittest.TestCase):
