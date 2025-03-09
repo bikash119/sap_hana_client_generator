@@ -538,8 +538,15 @@ class {class_name}:
                     # Method implementation
                     # Format the path with parameters
                     if path_params:
-                        path_format_args = ", ".join([f"{p['name']}={self._sanitize_name(p['name'])}" for p in path_params])
-                        f.write(f"        path = f\"{path}\".format({path_format_args})\n")
+                        f.write("        path = f\"")
+                        # Replace {param} with {param_name} for proper f-string formatting
+                        formatted_path = path
+                        for p in path_params:
+                            param_name = p['name']
+                            sanitized_name = self._sanitize_name(param_name)
+                            formatted_path = formatted_path.replace(f"{{{param_name}}}", f"{{{sanitized_name}}}")
+                        f.write(f"{formatted_path}\"")
+                        f.write("\n")
                     else:
                         f.write(f"        path = \"{path}\"\n")
                     
@@ -602,12 +609,12 @@ setup(
     install_requires=[
         "requests>=2.25.0",
         "pyyaml>=5.4.0",
+        "responses>=0.13.0",
     ],
     extras_require={{
         "dev": [
             "pytest>=6.0.0",
             "pytest-cov>=2.10.0",
-            "responses>=0.13.0",
         ],
     }},
     classifiers=[
@@ -775,90 +782,83 @@ MIT
         """
         with open(os.path.join(tests_dir, 'test_client.py'), 'w', encoding='utf-8') as f:
             api_title = self.spec.get('info', {}).get('title', 'API')
-            f.write(f"""\"\"\"Tests for the {api_title} client.\"\"\"
-
-import unittest
-from unittest.mock import patch, MagicMock
-import requests
-from {self.package_name} import Client
-
-
-class TestClient(unittest.TestCase):
-    \"\"\"Test cases for the main Client class.\"\"\"""")
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = Client(
-            base_url="https://api.example.com",
-            api_key="test-api-key",
-            username="test-user",
-            password="test-password"
-        )
-
-    def test_init(self):
-        """Test client initialization."""
-        self.assertEqual(self.client.base_url, "https://api.example.com")
-        self.assertEqual(self.client.api_key, "test-api-key")
-        self.assertEqual(self.client.username, "test-user")
-        self.assertEqual(self.client.password, "test-password")
-        self.assertEqual(self.client.timeout, 60)
-        self.assertTrue(self.client.verify)
-        
-        # Test default values
-        client = Client(base_url="https://api.example.com")
-        self.assertIsNone(client.api_key)
-        self.assertIsNone(client.username)
-        self.assertIsNone(client.password)
-
-    @patch('requests.Session.request')
-    def test_request(self, mock_request):
-        """Test the request method."""
-        # Setup mock response
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "success"}
-        mock_request.return_value = mock_response
-        
-        # Test GET request
-        response = self.client.request(
-            method="get",
-            path="/test",
-            params={"param1": "value1"},
-            headers={"Custom-Header": "Value"}
-        )
-        
-        # Verify request was made correctly
-        mock_request.assert_called_once_with(
-            method="get",
-            url="https://api.example.com/test",
-            params={"param1": "value1"},
-            data=None,
-            json=None,
-            headers={"Custom-Header": "Value", "Authorization": "Bearer test-api-key"},
-            auth=("test-user", "test-password"),
-            timeout=60,
-            verify=True
-        )
-        
-        self.assertEqual(response, mock_response)
-        
-    @patch('requests.Session.request')
-    def test_request_error(self, mock_request):
-        """Test error handling in the request method."""
-        # Setup mock response for error
-        mock_response = MagicMock()
-        mock_response.status_code = 404
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
-        mock_request.return_value = mock_response
-        
-        # Test error handling
-        with self.assertRaises(requests.exceptions.HTTPError):
-            self.client.request("get", "/nonexistent")
-
-
-if __name__ == '__main__':
-    unittest.main()
-''')
+            
+            # Write the file with separate write calls to avoid f-string issues
+            f.write(f'"""Tests for the {api_title} client."""\n\n')
+            f.write('import unittest\n')
+            f.write('from unittest.mock import patch, MagicMock\n')
+            f.write('import requests\n')
+            f.write(f'from {self.package_name} import Client\n\n\n')
+            
+            f.write('class TestClient(unittest.TestCase):\n')
+            f.write('    """Test cases for the main Client class."""\n\n')
+            
+            f.write('    def setUp(self):\n')
+            f.write('        """Set up test fixtures."""\n')
+            f.write('        self.client = Client(\n')
+            f.write('            base_url="https://api.example.com",\n')
+            f.write('            api_key="test-api-key",\n')
+            f.write('            username="test-user",\n')
+            f.write('            password="test-password"\n')
+            f.write('        )\n\n')
+            
+            f.write('    def test_init(self):\n')
+            f.write('        """Test client initialization."""\n')
+            f.write('        self.assertEqual(self.client.base_url, "https://api.example.com")\n')
+            f.write('        self.assertEqual(self.client.api_key, "test-api-key")\n')
+            f.write('        self.assertEqual(self.client.username, "test-user")\n')
+            f.write('        self.assertEqual(self.client.password, "test-password")\n')
+            f.write('        self.assertEqual(self.client.timeout, 60)\n')
+            f.write('        self.assertTrue(self.client.verify)\n\n')
+            f.write('        # Test default values\n')
+            f.write('        client = Client(base_url="https://api.example.com")\n')
+            f.write('        self.assertIsNone(client.api_key)\n')
+            f.write('        self.assertIsNone(client.username)\n')
+            f.write('        self.assertIsNone(client.password)\n\n')
+            
+            f.write('    @patch(\'requests.Session.request\')\n')
+            f.write('    def test_request(self, mock_request):\n')
+            f.write('        """Test the request method."""\n')
+            f.write('        # Setup mock response\n')
+            f.write('        mock_response = MagicMock()\n')
+            f.write('        mock_response.status_code = 200\n')
+            f.write('        mock_response.json.return_value = {"result": "success"}\n')
+            f.write('        mock_request.return_value = mock_response\n\n')
+            f.write('        # Test GET request\n')
+            f.write('        response = self.client.request(\n')
+            f.write('            method="get",\n')
+            f.write('            path="/test",\n')
+            f.write('            params={"param1": "value1"},\n')
+            f.write('            headers={"Custom-Header": "Value"}\n')
+            f.write('        )\n\n')
+            f.write('        # Verify request was made correctly\n')
+            f.write('        mock_request.assert_called_once_with(\n')
+            f.write('            method="get",\n')
+            f.write('            url="https://api.example.com/test",\n')
+            f.write('            params={"param1": "value1"},\n')
+            f.write('            data=None,\n')
+            f.write('            json=None,\n')
+            f.write('            headers={"Custom-Header": "Value", "Authorization": "Bearer test-api-key"},\n')
+            f.write('            auth=("test-user", "test-password"),\n')
+            f.write('            timeout=60,\n')
+            f.write('            verify=True\n')
+            f.write('        )\n\n')
+            f.write('        self.assertEqual(response, mock_response)\n\n')
+            
+            f.write('    @patch(\'requests.Session.request\')\n')
+            f.write('    def test_request_error(self, mock_request):\n')
+            f.write('        """Test error handling in the request method."""\n')
+            f.write('        # Setup mock response for error\n')
+            f.write('        mock_response = MagicMock()\n')
+            f.write('        mock_response.status_code = 404\n')
+            f.write('        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")\n')
+            f.write('        mock_request.return_value = mock_response\n\n')
+            f.write('        # Test error handling\n')
+            f.write('        with self.assertRaises(requests.exceptions.HTTPError):\n')
+            f.write('            self.client.request("get", "/nonexistent")\n\n\n')
+            
+            f.write('if __name__ == \'__main__\':\n')
+            f.write('    unittest.main()\n')
 
     def _generate_model_tests(self, tests_dir: str) -> None:
         """Generate tests for model classes.
