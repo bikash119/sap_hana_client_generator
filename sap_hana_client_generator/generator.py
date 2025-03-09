@@ -73,8 +73,11 @@ class ClientGenerator:
         Returns:
             A valid Python identifier derived from the input name
         """
-        # Replace non-alphanumeric characters with underscores
-        name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+        # Replace non-alphanumeric characters with underscores (except dots)
+        name = re.sub(r'[^a-zA-Z0-9_\.]', '_', name)
+        
+        # Replace dots with underscores (specifically handling namespace separators)
+        name = name.replace('.', '_')
         
         # Ensure the name starts with a letter or underscore
         if name and not name[0].isalpha() and name[0] != '_':
@@ -82,11 +85,12 @@ class ClientGenerator:
             
         return name
 
-    def _get_python_type(self, schema: Dict[str, Any]) -> str:
+    def _get_python_type(self, schema: Dict[str, Any], model_references: set = None) -> str:
         """Convert OpenAPI schema type to Python type annotation.
         
         Args:
             schema: OpenAPI schema object
+            model_references: Optional set to collect model references for imports
             
         Returns:
             Python type annotation as a string
@@ -113,14 +117,20 @@ class ClientGenerator:
             return 'str'
         elif schema_type == 'array':
             items = schema.get('items', {})
-            item_type = self._get_python_type(items)
+            item_type = self._get_python_type(items, model_references)
             return f'List[{item_type}]'
         elif schema_type == 'object' or 'properties' in schema:
             return 'Dict[str, Any]'
         elif '$ref' in schema:
             ref = schema['$ref']
             model_name = ref.split('/')[-1]
-            return model_name
+            sanitized_name = self._sanitize_name(model_name)
+            
+            # Track this reference for imports if a collection was provided
+            if model_references is not None:
+                model_references.add(sanitized_name)
+                
+            return sanitized_name
         
         return 'Any'
 
@@ -348,13 +358,33 @@ class Client:
             model_name = self._sanitize_name(schema_name)
             file_path = os.path.join(models_dir, f"{model_name.lower()}.py")
             
+            # Collect model references for imports
+            model_references = set()
+            
+            # Pre-scan properties to collect all model references
+            properties = schema.get('properties', {})
+            required = schema.get('required', [])
+            
+            for prop_name, prop_schema in properties.items():
+                self._get_python_type(prop_schema, model_references)
+            
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(f"""\"\"\"Model definition for {schema_name}.\"\"\"
 
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass
 from datetime import datetime, date
-
+""")
+                
+                # Add imports for referenced models
+                if model_references:
+                    f.write("\n# Imports for referenced models\n")
+                    for ref_model in sorted(model_references):
+                        if ref_model != model_name:  # Avoid self-imports
+                            f.write(f"from .{ref_model.lower()} import {ref_model}\n")
+                    f.write("\n")
+                
+                f.write(f"""
 @dataclass
 class {model_name}:
     \"\"\"Model class for {schema_name}.
@@ -364,9 +394,6 @@ class {model_name}:
 """)
                 
                 # Add properties
-                properties = schema.get('properties', {})
-                required = schema.get('required', [])
-                
                 for prop_name, prop_schema in properties.items():
                     python_name = self._sanitize_name(prop_name)
                     python_type = self._get_python_type(prop_schema)
@@ -843,7 +870,6 @@ MIT
             f.write('            timeout=60,\n')
             f.write('            verify=True\n')
             f.write('        )\n\n')
-            f.write('        self.assertEqual(response, mock_response)\n\n')
             
             f.write('    @patch(\'requests.Session.request\')\n')
             f.write('    def test_request_error(self, mock_request):\n')

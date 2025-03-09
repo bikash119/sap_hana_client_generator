@@ -113,6 +113,16 @@ class TestClientGenerator(unittest.TestCase):
         self.assertEqual(generator._sanitize_name("test-name"), "test_name")
         self.assertEqual(generator._sanitize_name("123test"), "api_123test")
         self.assertEqual(generator._sanitize_name("test!@#"), "test___")
+        
+        # Test namespace handling
+        self.assertEqual(generator._sanitize_name("API_SALES_ORDER_SRV.A_SalesOrderType"), 
+                         "API_SALES_ORDER_SRV_A_SalesOrderType")
+        self.assertEqual(generator._sanitize_name("namespace.subnamespace.Type"), 
+                         "namespace_subnamespace_Type")
+        self.assertEqual(generator._sanitize_name(".leadingDot"), 
+                         "_leadingDot")  # Should handle leading dot
+        self.assertEqual(generator._sanitize_name("trailingDot."), 
+                         "trailingDot_")  # Should handle trailing dot
 
     @patch('sap_hana_client_generator.generator.ClientGenerator._load_spec')
     def test_get_python_type(self, mock_load_spec):
@@ -142,6 +152,63 @@ class TestClientGenerator(unittest.TestCase):
             "TestModel"
         )
         self.assertEqual(generator._get_python_type({}), "Any")
+        
+        # Test namespaced references
+        self.assertEqual(
+            generator._get_python_type({"$ref": "#/components/schemas/API_SALES_ORDER_SRV.A_SalesOrderType"}),
+            "API_SALES_ORDER_SRV_A_SalesOrderType"
+        )
+        self.assertEqual(
+            generator._get_python_type({"$ref": "#/components/schemas/ns1.ns2.Type"}),
+            "ns1_ns2_Type"
+        )
+        
+        # Test model reference tracking
+        model_references = set()
+        generator._get_python_type({"$ref": "#/components/schemas/TestModel"}, model_references)
+        self.assertEqual(model_references, {"TestModel"})
+        
+        # Test tracking multiple references
+        model_references = set()
+        generator._get_python_type({"$ref": "#/components/schemas/Model1"}, model_references)
+        generator._get_python_type({"$ref": "#/components/schemas/Model2"}, model_references)
+        self.assertEqual(model_references, {"Model1", "Model2"})
+        
+        # Test tracking references in arrays
+        model_references = set()
+        generator._get_python_type(
+            {"type": "array", "items": {"$ref": "#/components/schemas/ArrayItem"}},
+            model_references
+        )
+        self.assertEqual(model_references, {"ArrayItem"})
+
+    @patch('sap_hana_client_generator.generator.ClientGenerator._load_spec')
+    def test_get_python_type_with_namespaces(self, mock_load_spec):
+        """Test the _get_python_type method with namespaced references."""
+        mock_load_spec.return_value = self.test_spec
+        generator = ClientGenerator("dummy_path.yaml", self.temp_dir)
+        
+        # Test handling of namespaced references
+        self.assertEqual(
+            generator._get_python_type({"$ref": "#/components/schemas/API_SALES_ORDER_SRV.A_SalesOrderType"}),
+            "API_SALES_ORDER_SRV_A_SalesOrderType"
+        )
+        
+        # Test with multiple namespace levels
+        self.assertEqual(
+            generator._get_python_type({"$ref": "#/components/schemas/ns1.ns2.Type"}),
+            "ns1_ns2_Type"
+        )
+        
+        # Test with a mix of reference and other properties
+        complex_schema = {
+            "$ref": "#/components/schemas/API_SALES_ORDER_SRV.A_SalesOrderType",
+            "description": "A sales order"
+        }
+        self.assertEqual(
+            generator._get_python_type(complex_schema),
+            "API_SALES_ORDER_SRV_A_SalesOrderType"
+        )
 
     @patch('sap_hana_client_generator.generator.ClientGenerator')
     def test_generate_client_from_spec(self, mock_client_generator):
