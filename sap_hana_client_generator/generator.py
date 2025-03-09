@@ -147,6 +147,9 @@ class ClientGenerator:
         # Generate API modules
         self._generate_api_modules()
         
+        # Generate test modules
+        self._generate_tests()
+        
         # Generate setup.py
         self._generate_setup_py()
         
@@ -173,6 +176,9 @@ class ClientGenerator:
         # Create api directory
         os.makedirs(os.path.join(self.package_dir, 'api'), exist_ok=True)
         
+        # Create tests directory
+        os.makedirs(os.path.join(self.output_dir, 'tests'), exist_ok=True)
+        
         # Create __init__.py files
         with open(os.path.join(self.package_dir, '__init__.py'), 'w', encoding='utf-8') as f:
             f.write(f'''"""Client library for {self.spec.get('info', {}).get('title', 'SAP API')}.
@@ -190,6 +196,9 @@ __version__ = '0.1.0'
             
         with open(os.path.join(self.package_dir, 'api', '__init__.py'), 'w', encoding='utf-8') as f:
             f.write('"""Generated API endpoint modules."""\n\n')
+            
+        with open(os.path.join(self.output_dir, 'tests', '__init__.py'), 'w', encoding='utf-8') as f:
+            f.write('"""Generated tests for the client library."""\n\n')
 
     def _generate_client_module(self) -> None:
         """Generate the main client module.
@@ -594,6 +603,13 @@ setup(
         "requests>=2.25.0",
         "pyyaml>=5.4.0",
     ],
+    extras_require={{
+        "dev": [
+            "pytest>=6.0.0",
+            "pytest-cov>=2.10.0",
+            "responses>=0.13.0",
+        ],
+    }},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -658,6 +674,26 @@ client = Client(
 # print(response)
 ```
 
+## Testing
+
+The client comes with auto-generated tests. To run them:
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests with pytest
+pytest
+
+# Run tests with coverage report
+pytest --cov={self.package_name}
+```
+
+The tests include:
+- Client initialization and request handling
+- Model validation
+- API endpoint functionality (mock responses)
+
 ## API Documentation
 
 This client was generated from an OpenAPI specification. For detailed API documentation, please refer to the original API documentation.
@@ -666,6 +702,392 @@ This client was generated from an OpenAPI specification. For detailed API docume
 
 MIT
 """)
+
+
+    def _generate_tests(self) -> None:
+        """Generate test modules for the client library.
+        
+        This method creates test cases for the client, models, and API endpoints.
+        """
+        tests_dir = os.path.join(self.output_dir, 'tests')
+        
+        # Generate client test
+        self._generate_client_test(tests_dir)
+        
+        # Generate model tests
+        self._generate_model_tests(tests_dir)
+        
+        # Generate API endpoint tests
+        self._generate_api_tests(tests_dir)
+        
+        # Generate conftest.py for pytest fixtures
+        self._generate_conftest(tests_dir)
+        
+    def _generate_client_test(self, tests_dir: str) -> None:
+        """Generate test for the main client class.
+        
+        Args:
+            tests_dir: Directory where the test file will be saved
+        """
+        with open(os.path.join(tests_dir, 'test_client.py'), 'w', encoding='utf-8') as f:
+            api_title = self.spec.get('info', {}).get('title', 'API')
+            f.write(f"""\"\"\"Tests for the {api_title} client.\"\"\""")
+
+import unittest
+from unittest.mock import patch, MagicMock
+import requests
+from {self.package_name} import Client
+
+
+class TestClient(unittest.TestCase):
+    """Test cases for the main Client class."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client(
+            base_url="https://api.example.com",
+            api_key="test-api-key",
+            username="test-user",
+            password="test-password"
+        )
+
+    def test_init(self):
+        """Test client initialization."""
+        self.assertEqual(self.client.base_url, "https://api.example.com")
+        self.assertEqual(self.client.api_key, "test-api-key")
+        self.assertEqual(self.client.username, "test-user")
+        self.assertEqual(self.client.password, "test-password")
+        self.assertEqual(self.client.timeout, 60)
+        self.assertTrue(self.client.verify)
+        
+        # Test default values
+        client = Client(base_url="https://api.example.com")
+        self.assertIsNone(client.api_key)
+        self.assertIsNone(client.username)
+        self.assertIsNone(client.password)
+
+    @patch('requests.Session.request')
+    def test_request(self, mock_request):
+        """Test the request method."""
+        # Setup mock response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_request.return_value = mock_response
+        
+        # Test GET request
+        response = self.client.request(
+            method="get",
+            path="/test",
+            params={"param1": "value1"},
+            headers={"Custom-Header": "Value"}
+        )
+        
+        # Verify request was made correctly
+        mock_request.assert_called_once_with(
+            method="get",
+            url="https://api.example.com/test",
+            params={"param1": "value1"},
+            data=None,
+            json=None,
+            headers={"Custom-Header": "Value", "Authorization": "Bearer test-api-key"},
+            auth=("test-user", "test-password"),
+            timeout=60,
+            verify=True
+        )
+        
+        self.assertEqual(response, mock_response)
+        
+    @patch('requests.Session.request')
+    def test_request_error(self, mock_request):
+        """Test error handling in the request method."""
+        # Setup mock response for error
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
+        mock_request.return_value = mock_response
+        
+        # Test error handling
+        with self.assertRaises(requests.exceptions.HTTPError):
+            self.client.request("get", "/nonexistent")
+
+
+if __name__ == '__main__':
+    unittest.main()
+''')
+
+    def _generate_model_tests(self, tests_dir: str) -> None:
+        """Generate tests for model classes.
+        
+        Args:
+            tests_dir: Directory where the test files will be saved
+        """
+        # Get all schema definitions
+        schemas = self.spec.get('components', {}).get('schemas', {})
+        
+        if not schemas:
+            return
+        
+        # Create a test file for models
+        with open(os.path.join(tests_dir, 'test_models.py'), 'w', encoding='utf-8') as f:
+            api_title = self.spec.get('info', {}).get('title', 'API')
+            
+            # Write imports
+            f.write(f'''"""Tests for {api_title} model classes."""
+
+import unittest
+from {self.package_name}.models import *
+
+
+class TestModels(unittest.TestCase):
+    """Test cases for the generated model classes."""
+
+''')
+            
+            # Generate test methods for each model
+            for schema_name, schema in schemas.items():
+                model_name = self._sanitize_name(schema_name)
+                properties = schema.get('properties', {})
+                required = schema.get('required', [])
+                
+                f.write(f'''    def test_{model_name.lower()}(self):
+        """Test the {model_name} model."""
+        # Test creating a model instance with required properties
+''')
+                
+                # Initialize model with required properties
+                if required:
+                    init_args = []
+                    for prop_name in required:
+                        prop_schema = properties.get(prop_name, {})
+                        prop_type = prop_schema.get('type', 'string')
+                        
+                        if prop_type == 'string':
+                            init_args.append(f'{self._sanitize_name(prop_name)}="test_{prop_name}"')
+                        elif prop_type == 'integer':
+                            init_args.append(f'{self._sanitize_name(prop_name)}=123')
+                        elif prop_type == 'number':
+                            init_args.append(f'{self._sanitize_name(prop_name)}=123.45')
+                        elif prop_type == 'boolean':
+                            init_args.append(f'{self._sanitize_name(prop_name)}=True')
+                        elif prop_type == 'array':
+                            init_args.append(f'{self._sanitize_name(prop_name)}=[]')
+                        elif prop_type == 'object':
+                            init_args.append(f'{self._sanitize_name(prop_name)}={{}}')
+                        
+                    f.write(f'        model = {model_name}({", ".join(init_args)})\n')
+                else:
+                    f.write(f'        model = {model_name}()\n')
+                
+                # Add assertions for each property
+                for prop_name, prop_schema in properties.items():
+                    prop_var = self._sanitize_name(prop_name)
+                    
+                    if prop_name in required:
+                        prop_type = prop_schema.get('type', 'string')
+                        
+                        if prop_type == 'string':
+                            f.write(f'        self.assertEqual(model.{prop_var}, "test_{prop_name}")\n')
+                        elif prop_type == 'integer':
+                            f.write(f'        self.assertEqual(model.{prop_var}, 123)\n')
+                        elif prop_type == 'number':
+                            f.write(f'        self.assertEqual(model.{prop_var}, 123.45)\n')
+                        elif prop_type == 'boolean':
+                            f.write(f'        self.assertTrue(model.{prop_var})\n')
+                        elif prop_type == 'array':
+                            f.write(f'        self.assertEqual(model.{prop_var}, [])\n')
+                        elif prop_type == 'object':
+                            f.write(f'        self.assertEqual(model.{prop_var}, {{}})\n')
+                    else:
+                        f.write(f'        self.assertIsNone(model.{prop_var})\n')
+                
+                f.write('\n')
+            
+            # Close the class
+            f.write('''
+if __name__ == '__main__':
+    unittest.main()
+''')
+
+    def _generate_api_tests(self, tests_dir: str) -> None:
+        """Generate tests for API endpoint classes.
+        
+        Args:
+            tests_dir: Directory where the test files will be saved
+        """
+        # Group operations by tag
+        tags_operations = {}
+        paths = self.spec.get('paths', {})
+        
+        for path, path_item in paths.items():
+            for method in ['get', 'post', 'put', 'delete', 'patch']:
+                if method in path_item:
+                    operation = path_item[method]
+                    tags = operation.get('tags', ['default'])
+                    
+                    for tag in tags:
+                        if tag not in tags_operations:
+                            tags_operations[tag] = []
+                        
+                        tags_operations[tag].append({
+                            'path': path,
+                            'method': method,
+                            'operation': operation,
+                            'operation_id': operation.get('operationId')
+                        })
+        
+        # Skip if no operations
+        if not tags_operations:
+            return
+        
+        # Generate a test file for each API tag
+        for tag, operations in tags_operations.items():
+            module_name = self._sanitize_name(tag).lower()
+            class_name = self._sanitize_name(tag).capitalize() + 'Api'
+            file_path = os.path.join(tests_dir, f'test_{module_name}_api.py')
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(f'''"""Tests for {tag} API endpoints."""
+
+import unittest
+from unittest.mock import patch, MagicMock
+import requests
+from {self.package_name} import Client
+
+
+class Test{class_name}(unittest.TestCase):
+    """Test cases for the {tag} API endpoints."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = Client(base_url="https://api.example.com")
+        self.api = self.client.{module_name}
+
+''')
+                
+                # Generate test methods for each operation
+                for op in operations:
+                    if not op.get('operation_id'):
+                        continue
+                        
+                    operation_id = self._sanitize_name(op['operation_id'])
+                    path = op['path']
+                    method = op['method']
+                    operation = op['operation']
+                    
+                    # Get parameters
+                    parameters = operation.get('parameters', [])
+                    path_params = [p for p in parameters if p.get('in') == 'path']
+                    query_params = [p for p in parameters if p.get('in') == 'query']
+                    
+                    # Get request body
+                    request_body = operation.get('requestBody', {})
+                    request_content = request_body.get('content', {})
+                    
+                    # Generate method parameters
+                    method_params = []
+                    for param in path_params:
+                        param_name = self._sanitize_name(param['name'])
+                        param_schema = param.get('schema', {})
+                        param_type = param_schema.get('type', 'string')
+                        
+                        if param_type == 'string':
+                            method_params.append(f'{param_name}="test_{param_name}"')
+                        elif param_type == 'integer':
+                            method_params.append(f'{param_name}=123')
+                        elif param_type == 'number':
+                            method_params.append(f'{param_name}=123.45')
+                        else:
+                            method_params.append(f'{param_name}="test_{param_name}"')
+                    
+                    # Add body parameter if needed
+                    if 'application/json' in request_content:
+                        if request_body.get('required', False):
+                            method_params.append('data={"test": "data"}')
+                    
+                    # Generate the test method
+                    f.write(f'''    @patch('requests.Session.request')
+    def test_{operation_id}(self, mock_request):
+        """Test the {operation_id} method."""
+        # Setup mock response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {{"result": "success"}}
+        mock_request.return_value = mock_response
+        
+        # Call the API method
+        result = self.api.{operation_id}({", ".join(method_params)})
+        
+        # Verify the request was made correctly
+        mock_request.assert_called_once()
+        call_args = mock_request.call_args[1]
+        self.assertEqual(call_args['method'], '{method}')
+''')
+                    
+                    # Add path parameter assertions
+                    if path_params:
+                        expected_path = path
+                        for param in path_params:
+                            param_name = param['name']
+                            param_schema = param.get('schema', {})
+                            param_type = param_schema.get('type', 'string')
+                            
+                            if param_type == 'string':
+                                expected_path = expected_path.replace(f"{{{param_name}}}", f"test_{self._sanitize_name(param_name)}")
+                            elif param_type == 'integer':
+                                expected_path = expected_path.replace(f"{{{param_name}}}", "123")
+                            elif param_type == 'number':
+                                expected_path = expected_path.replace(f"{{{param_name}}}", "123.45")
+                            else:
+                                expected_path = expected_path.replace(f"{{{param_name}}}", f"test_{self._sanitize_name(param_name)}")
+                        
+                        f.write(f"        self.assertEqual(call_args['url'], 'https://api.example.com{expected_path}')\n")
+                    
+                    # Add body parameter assertions
+                    if 'application/json' in request_content and request_body.get('required', False):
+                        f.write("        self.assertEqual(call_args['json'], {'test': 'data'})\n")
+                    
+                    # Add result assertions
+                    f.write("        self.assertEqual(result, {'result': 'success'})\n")
+                    f.write('\n')
+                
+                # Close the class
+                f.write('''
+if __name__ == '__main__':
+    unittest.main()
+''')
+
+    def _generate_conftest(self, tests_dir: str) -> None:
+        """Generate conftest.py file for pytest fixtures.
+        
+        Args:
+            tests_dir: Directory where the conftest.py file will be saved
+        """
+        with open(os.path.join(tests_dir, 'conftest.py'), 'w', encoding='utf-8') as f:
+            f.write(f'''"""Test fixtures for pytest."""
+
+import pytest
+import responses
+from {self.package_name} import Client
+
+
+@pytest.fixture
+def client():
+    """Create a client instance for testing."""
+    return Client(
+        base_url="https://api.example.com",
+        api_key="test-api-key",
+        username="test-user",
+        password="test-password"
+    )
+
+
+@pytest.fixture
+def mock_responses():
+    """Setup and teardown for mocked responses."""
+    with responses.RequestsMock() as rsps:
+        yield rsps
+''')
 
 
 def generate_client_from_spec(spec_path: str, output_dir: Optional[str] = None) -> str:

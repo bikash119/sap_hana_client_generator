@@ -80,6 +80,26 @@ class TestClientGenerator(unittest.TestCase):
         self.assertEqual(generator.package_name, "test_api")
         self.assertEqual(generator.output_dir, self.temp_dir)
         self.assertEqual(generator.package_dir, os.path.join(self.temp_dir, "test_api"))
+        
+    @patch('sap_hana_client_generator.generator.ClientGenerator._load_spec')
+    def test_generate_tests(self, mock_load_spec):
+        """Test test generation."""
+        mock_load_spec.return_value = self.test_spec
+        generator = ClientGenerator("dummy_path.yaml", self.temp_dir)
+        
+        # Create package structure first
+        generator._create_package_structure()
+        
+        # Generate tests
+        generator._generate_tests()
+        
+        # Check test files were created
+        tests_dir = os.path.join(self.temp_dir, 'tests')
+        self.assertTrue(os.path.exists(tests_dir))
+        self.assertTrue(os.path.exists(os.path.join(tests_dir, '__init__.py')))
+        self.assertTrue(os.path.exists(os.path.join(tests_dir, 'test_client.py')))
+        self.assertTrue(os.path.exists(os.path.join(tests_dir, 'test_models.py')))
+        self.assertTrue(os.path.exists(os.path.join(tests_dir, 'conftest.py')))
 
     @patch('sap_hana_client_generator.generator.ClientGenerator._load_spec')
     def test_sanitize_name(self, mock_load_spec):
